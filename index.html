@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LIZ</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+    <div class="container">
+        <h1>LIZ</h1>
+
+        <div class="controls">
+        <button id="micBtn">🎤 Speak To Me</button>
+        <input id="textInput" placeholder="Enter Text"/>
+        <button id="sendBtn">Send</button>
+    </div>
+</div>
+
+<script>
+const conv = document.getElementById("conversation");
+const micBtn = document.getElementById("micBtn");
+const sendBtn = document.getElementById("sendBtn");
+const textInput = document.getElementById("textInput");
+
+// Add message to conversation
+function addMessage(role, text){
+  const el = document.createElement("div");
+  el.className = "message " + role;
+  el.textContent = (role === "user" ? "You: " : "Assistant: ") + text;
+  conv.appendChild(el);
+  conv.scrollTop = conv.scrollHeight;
+}
+
+// Speech synthesis
+function speak(text){
+  if(!("speechSynthesis" in window)) return;
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(u);
+}
+
+// Send text to backend
+async function sendText(text){
+  addMessage("user", text);
+  try {
+    const r = await fetch("/query", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({text})
+    });
+    const j = await r.json();
+    if(j.type === "youtube"){
+      let html = "YouTube results:\n";
+      j.items.forEach((it, idx) => {
+        html += `${idx+1}. ${it.title} — ${it.url}\n`;
+      });
+      addMessage("assistant", html);
+      speak("I found some videos. Opening the first one now.");
+      if(j.items && j.items.length > 0){
+        window.open(j.items[0].url, "_blank");
+      }
+    } else if(j.type === "chat"){
+      addMessage("assistant", j.reply);
+      speak(j.reply);
+    } else {
+      addMessage("assistant", "I didn't understand.");
+    }
+  } catch(err){
+    console.error(err);
+    addMessage("assistant", "Error contacting backend.");
+  }
+}
+
+// Send button click
+sendBtn.onclick = () => {
+  const text = textInput.value.trim();
+  if(!text) return;
+  textInput.value = "";
+  sendText(text);
+};
+
+// Speech recognition
+let recognition;
+if('webkitSpeechRecognition' in window || 'SpeechRecognition' in window){
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRecognition();
+  recognition.lang = 'en-US';
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.onresult = (e) => {
+    const text = e.results[0][0].transcript;
+    sendText(text);
+  };
+  recognition.onerror = (e) => {
+    console.error("Speech error", e);
+    addMessage("assistant", "Speech recognition error.");
+  };
+} else {
+  micBtn.disabled = true;
+  micBtn.textContent = "🎤 (not supported)";
+}
+
+// Mic button click
+micBtn.onclick = () => {
+  if(!recognition) return;
+  recognition.start();
+  addMessage("assistant", "Listening...");
+};
+</script>
+</body>
+</html>
